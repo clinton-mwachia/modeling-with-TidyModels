@@ -1,0 +1,152 @@
+---
+title: "Resampling with TidyModels"
+author: "clinton moshe"
+date: "11/18/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## The Libraries
+
+```{r}
+library(tidymodels)
+library(tidyverse)
+```
+
+## The Data
+
+```{r}
+diabetes <- read_csv('data/diabetes.csv')
+
+# structure of the data
+str(diabetes)
+
+# summary stat
+summary(diabetes)
+
+# convert outcome to factor
+diabetes <- diabetes %>%
+  mutate(Outcome = as_factor(Outcome))
+```
+
+## Data Visualization
+
+**You can do your EDA here**
+
+## Data Splitting
+
+```{r}
+data_split <- initial_split(diabetes, prop = 7/10)
+
+# train
+train <- training(data_split)
+
+# test
+test <- testing(data_split)
+```
+
+## Recipe
+
+```{r}
+rf_rec <- 
+  recipe(Outcome~., data = train) %>%
+  step_normalize(all_predictors())
+
+rf_rec
+```
+
+## Model
+
+```{r}
+rf_mod <- 
+  rand_forest(trees = 300) %>%
+  set_engine('ranger') %>%
+  set_mode('classification')
+
+rf_mod
+```
+
+## Workflow
+
+```{r}
+rf_wf <- 
+  workflow() %>%
+  add_model(rf_mod) %>%
+  add_recipe(rf_rec)
+rf_wf
+```
+
+## Model Fitting
+
+```{r}
+rf_fit <- 
+  rf_wf %>%
+  fit(train)
+rf_fit
+```
+
+
+## Model Performance
+
+### train
+
+```{r}
+# predict on the train data
+rf_train_pred <- 
+  predict(rf_fit, new_data = train) %>%
+  bind_cols(predict(rf_fit, new_data = train, type = 'prob')) %>% # combining predicted with actual values
+  bind_cols(train %>% select(Outcome))
+rf_train_pred
+```
+
+### test
+
+```{r}
+# predict on the test data and compare results
+rf_test_pred <- 
+  predict(rf_fit, new_data = test) %>%
+  bind_cols(predict(rf_fit, new_data = test, type = 'prob')) %>% # combining predicted with actual values
+  bind_cols(test %>% select(Outcome))
+rf_test_pred
+```
+
+## Predictions Accuracy
+
+```{r}
+# train acc
+rf_train_pred %>%
+  accuracy(Outcome, .pred_class)
+# test acc
+rf_test_pred %>%
+  accuracy(Outcome, .pred_class)
+```
+
+
+## Resampling
+
+```{r}
+# defining the folds for cross vallidation
+set.seed(100)
+
+folds <- vfold_cv(train,10,repeats = 2)
+
+# fitting the model
+set.seed(102)
+rf_fit_cv <-
+  rf_wf %>%
+  fit_resamples(folds)
+
+rf_fit_cv
+```
+
+
+### Samples metrics
+
+```{r}
+rf_fit_cv %>%
+  collect_metrics()
+```
+
