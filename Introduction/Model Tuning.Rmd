@@ -1,0 +1,125 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+## Libraries
+
+```{r}
+library(tidymodels)
+library(tidyverse)
+```
+
+## The Data
+
+```{r}
+diabetes <- read_csv('data/diabetes.csv')
+
+# structure of the data
+str(diabetes)
+
+# summary stat
+summary(diabetes)
+
+# convert outcome to factor
+diabetes <- diabetes %>%
+  mutate(Outcome = as_factor(Outcome))
+
+data_split <- initial_split(diabetes, prop = 7/10)
+
+# train
+train <- training(data_split)
+
+# test
+test <- testing(data_split)
+```
+
+## Tune Specifications
+
+```{r}
+tune_spec <-
+  rand_forest(
+    mtry = tune(),
+    trees = tune(),
+    min_n = tune()
+  ) %>%
+  set_engine('randomForest') %>%
+  set_mode('classification')
+tune_spec
+```
+
+## Folds
+
+```{r}
+set.seed(200)
+folds <- vfold_cv(train)
+folds
+```
+
+## Workflow
+
+```{r}
+rf_wf <-
+  workflow() %>%
+  add_model(tune_spec) %>%
+  add_formula(Outcome~.)
+rf_wf
+```
+
+## Tuning
+
+```{r}
+rf_tun <-
+  rf_wf %>%
+  tune_grid(
+    resamples=folds,
+    grid=10
+  )
+rf_tun
+```
+
+
+## Metrics of the tune
+
+```{r}
+rf_tun %>%
+  collect_metrics()
+```
+
+## Best model
+
+```{r}
+best_model <- rf_tun %>%
+  select_best('accuracy')
+
+rf_tun %>%
+  show_best('roc_auc')
+```
+
+
+## Final Workflow
+
+```{r}
+rf_final_wf <- 
+  rf_wf %>%
+  finalize_workflow(best_model)
+rf_final_wf
+```
+
+
+## Final fit
+
+```{r}
+rf_final_fit <- 
+  rf_final_wf %>%
+  last_fit(data_split) # this will fit on train set and evaluate using test
+rf_final_fit
+```
+
+## Model Performance
+
+```{r}
+rf_final_fit %>%
+  collect_metrics()
+```
+
