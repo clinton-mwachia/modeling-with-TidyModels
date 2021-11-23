@@ -14,6 +14,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r}
 library(tidymodels)
 library(tidyverse)
+library(vip)
 ```
 
 ## The Data
@@ -190,7 +191,7 @@ cores
 
 ```{r}
 rf_mod <- 
-  rand_forest(mtry = tune(), min_n = tune(), trees = 1000) %>% 
+  rand_forest(mtry = tune(), min_n = tune(), trees = 10) %>% 
   set_engine("ranger", num.threads = cores) %>% 
   set_mode("classification")
 rf_mod
@@ -226,5 +227,90 @@ rf_res <-
             control = control_grid(save_pred = TRUE),
             metrics = metric_set(roc_auc))
 rf_res
+```
+
+```{r}
+rf_res %>% 
+  show_best(metric = "roc_auc")
+```
+
+```{r}
+autoplot(rf_res)
+```
+
+##### Best Model
+
+```{r}
+rf_best <- 
+  rf_res %>% 
+  select_best(metric = "roc_auc")
+rf_best
+```
+
+```{r}
+rf_res %>% 
+  collect_predictions()
+```
+
+
+```{r}
+rf_auc <- 
+  rf_res %>% 
+  collect_predictions(parameters = rf_best) %>% 
+  roc_curve(children, .pred_children) %>% 
+  mutate(model = "Random Forest")
+```
+
+
+```{r}
+bind_rows(rf_auc, lr_auc) %>% 
+  ggplot(aes(x = 1 - specificity, y = sensitivity, col = model)) + 
+  geom_path(lwd = 1.5, alpha = 0.8) +
+  geom_abline(lty = 3) + 
+  coord_equal() + 
+  scale_color_viridis_d(option = "plasma", end = .6)
+```
+
+## Final fit
+
+```{r}
+last_rf_mod <- 
+  rand_forest(mtry = 5, min_n = 35, trees = 10) %>% 
+  set_engine("ranger", num.threads = cores, importance = "impurity") %>% 
+  set_mode("classification")
+
+last_rf_workflow <- 
+  rf_workflow %>% 
+  update_model(last_rf_mod)
+
+set.seed(345)
+last_rf_fit <- 
+  last_rf_workflow %>% 
+  last_fit(splits)
+
+last_rf_fit
+```
+
+### Metrics
+
+```{r}
+last_rf_fit %>% 
+  collect_metrics()
+```
+
+```{r}
+last_rf_fit %>% 
+  pluck(".workflow", 1) %>%   
+  extract_fit_parsnip() %>% 
+  vip(num_features = 20)
+```
+
+### ROC CURVE
+
+```{r}
+last_rf_fit %>% 
+  collect_predictions() %>% 
+  roc_curve(children, .pred_children) %>% 
+  autoplot()
 ```
 
